@@ -1,0 +1,62 @@
+services: 
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_PASSWORD: devtesting12
+      POSTGRES_DB: iterium
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+
+  dragonfly:
+    image: 'docker.dragonflydb.io/dragonflydb/dragonfly'
+    ulimits:
+      memlock: -1
+    # For better performance, consider `host` mode instead `port` to avoid docker NAT.
+    # `host` mode is NOT currently supported in Swarm Mode.
+    # https://docs.docker.com/compose/compose-file/compose-file-v3/#network_mode
+    # network_mode: "host"
+    ports:
+      - "6379:6379"
+    volumes:
+      - dragonflydata:/data
+
+  rustfs_perms:
+    image: alpine
+    user: root
+    volumes:
+      - rustfsdata:/fix
+    command: chown -R 10001:10001 /fix
+
+  rustfs:
+    image: rustfs/rustfs:latest
+    depends_on:
+      rustfs_perms:
+        condition: service_completed_successfully
+    volumes:
+      - rustfsdata:/data
+    environment:
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ACCESS_KEY: rustfsadmin
+      RUSTFS_SECRET_KEY: devtesting12
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+  
+  createbucket:
+    image: rustfs/rc
+    depends_on:
+      - rustfs
+    entrypoint: >
+      /bin/sh -c "until (rc alias set iterium http://rustfs:9000 rustfsadmin devtesting12) do sleep 1; done;
+      rc mb --ignore-existing iterium/assets;
+      exit 0;"
+
+volumes:
+  pgdata:
+  dragonflydata:
+  rustfsdata: 
